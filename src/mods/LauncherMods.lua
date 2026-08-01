@@ -496,20 +496,31 @@ function LauncherMods._installZipInner(source, opts)
   local data, readErr = readArchive(source)
   if not data then return nil, readErr end
 
-  -- stage into a save-dir temp so mount can reach it
-  local tmp = ("mod_import_%d_%d.zip"):format(os.time(), math.random(0, 999999))
-  local ok, writeErr = fs.write(tmp, data)
-  if not ok then
-    return nil, "could not stage the .zip: " .. tostring(writeErr)
-  end
   local mount = "mod_import_mount"
-  if not fs.mount(tmp, mount) then
-    fs.remove(tmp)
-    return nil, "that .zip could not be opened"
+  local mountedSource
+  local tmp
+  if love.system and love.system.getOS
+      and love.system.getOS() == "UWP" and fs.newFileData then
+    mountedSource = fs.newFileData(data, "mod_import.zip")
+    if not fs.mount(mountedSource, mount) then
+      return nil, "that .zip could not be opened"
+    end
+  else
+    -- Stage into the save directory so PhysFS can reach the archive.
+    tmp = ("mod_import_%d_%d.zip"):format(os.time(), math.random(0, 999999))
+    local ok, writeErr = fs.write(tmp, data)
+    if not ok then
+      return nil, "could not stage the .zip: " .. tostring(writeErr)
+    end
+    mountedSource = tmp
+    if not fs.mount(tmp, mount) then
+      fs.remove(tmp)
+      return nil, "that .zip could not be opened"
+    end
   end
   local function cleanup()
-    pcall(fs.unmount, tmp)
-    fs.remove(tmp)
+    pcall(fs.unmount, mountedSource)
+    if tmp then fs.remove(tmp) end
   end
 
   local prefix, rootErr = LauncherMods.locateRoot(topLevelPaths(mount))
